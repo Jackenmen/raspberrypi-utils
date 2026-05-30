@@ -1,0 +1,52 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  publish:
+    needs: build
+    name: Publish the release
+    runs-on: ubuntu-latest
+    environment: Release
+    permissions:
+      contents: write
+    steps:
+      - name: Download amd64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: utils-amd64-Release
+          path: amd64
+
+      - name: Download arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: utils-arm64-Release
+          path: arm64
+
+      - name: Make amd64 release archives
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
+        working-directory: amd64/usr/bin
+        run: |
+          find . -not -name '*.txt' -exec chmod +x {} ';'
+          tar -czvf ../../../raspberrypi-utils-amd64.tar.gz *
+
+      - name: Make arm64 release archives
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
+        working-directory: arm64/usr/bin
+        run: |
+          find . -not -name '*.txt' -exec chmod +x {} ';'
+          tar -czvf ../../../raspberrypi-utils-arm64.tar.gz *
+
+      - name: Upload binaries to GitHub Release
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
+        run: |
+          gh release upload "$GITHUB_REF_NAME" *.tar.gz --repo "$GITHUB_REPOSITORY"
