@@ -19,12 +19,20 @@ jobs:
         runs-on: 
           - ubuntu-24.04
           - ubuntu-24.04-arm
+          - macos-26-intel
+          - macos-26
         include:
           - runs-on: ubuntu-24.04
             os_name: Linux
             arch: amd64
           - runs-on: ubuntu-24.04-arm
             os_name: Linux
+            arch: arm64
+          - runs-on: macos-26-intel
+            os_name: macOS
+            arch: amd64
+          - runs-on: macos-26
+            os_name: macOS
             arch: arm64
 
     steps:
@@ -45,6 +53,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt install meson
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install meson
 
       - name: Build dtc
         working-directory: dtc
