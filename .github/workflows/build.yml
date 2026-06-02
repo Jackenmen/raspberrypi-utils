@@ -17,17 +17,17 @@ jobs:
       matrix:
         build_type: [Debug, Release]
         runs-on: 
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
           - macos-26-intel
           - macos-26
           - windows-2025
           - windows-11-arm
         include:
-          - runs-on: ubuntu-24.04
+          - runs-on: ubuntu-22.04
             os_name: Linux
             arch: amd64
-          - runs-on: ubuntu-24.04-arm
+          - runs-on: ubuntu-22.04-arm
             os_name: Linux
             arch: arm64
           - runs-on: macos-26-intel
