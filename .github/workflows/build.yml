@@ -10,76 +10,74 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.arch }} ${{ matrix.build_type }}
-    runs-on: ${{ case(matrix.arch == 'amd64', 'ubuntu-24.04', 'ubuntu-24.04-arm') }}
+    name: ${{ matrix.os_name }} ${{ matrix.arch }} (${{ matrix.build_type }})
+    runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64, armhf]
         build_type: [Debug, Release]
+        runs-on: 
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+        include:
+          - runs-on: ubuntu-24.04
+            os_name: Linux
+            arch: amd64
+          - runs-on: ubuntu-24.04-arm
+            os_name: Linux
+            arch: arm64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: raspberrypi-utils
 
-      - name: Install build dependencies (non-armhf)
-        if: matrix.arch != 'armhf'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            device-tree-compiler \
-            libncurses-dev \
-            libfdt-dev \
-            libgnutls28-dev \
-            pkg-config
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: dgibson/dtc
+          # tag: v1.8.1
+          ref: 8f48565e5cfedc74d3f7512f1e0188e9d85dc1de
+          path: dtc
 
-      - name: Install build dependencies (armhf)
-        if: matrix.arch == 'armhf'
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
-          sudo dpkg --add-architecture armhf
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake \
-            device-tree-compiler \
-            crossbuild-essential-armhf \
-            pkg-config \
-            libncurses-dev:armhf \
-            libfdt-dev:armhf \
-            libgnutls28-dev:armhf
+          sudo apt install meson
 
-      - name: Configure (non-armhf)
-        if: matrix.arch != 'armhf'
+      - name: Build dtc
+        working-directory: dtc
         run: |
+          meson setup -D default_library=static build
+          meson compile -C build
+
+      - name: Configure
+        working-directory: raspberrypi-utils
+        env:
+          BUILD_TYPE: ${{ matrix.build_type }}
+        run: |
+          dtc_dir="$GITHUB_WORKSPACE/dtc"
+          injected_lists="$GITHUB_WORKSPACE/InjectCMakeLists.txt"
+          printf 'include_directories("%s")\nlink_directories("%s")\n' \
+            "$dtc_dir/libfdt" "$dtc_dir/build/libfdt" > "$injected_lists"
           cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DCMAKE_INSTALL_PREFIX=/usr \
-            -DENABLE_WERROR=ON
-
-      - name: Configure (armhf)
-        if: matrix.arch == 'armhf'
-        run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             -DCMAKE_INSTALL_PREFIX=/usr \
             -DENABLE_WERROR=ON \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=arm \
-            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
-            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
-            -DCMAKE_LIBRARY_ARCHITECTURE=arm-linux-gnueabihf \
-            -DPKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+            -DCMAKE_PROJECT_dtmerge_INCLUDE="$injected_lists"
 
       - name: Build
-        run: cmake --build build -j"$(nproc)"
+        working-directory: raspberrypi-utils
+        run: cmake --build build
 
       - name: Install (stage)
+        working-directory: raspberrypi-utils
         run: DESTDIR="$PWD/install" cmake --install build
 
       - name: Upload artefacts
         uses: actions/upload-artifact@v4
         with:
-          name: utils-${{ matrix.arch }}-${{ matrix.build_type }}
-          path: install/
+          name: utils-${{ runner.os }}-${{ matrix.arch }}-${{ matrix.build_type }}
+          path: raspberrypi-utils/install/
           if-no-files-found: error
