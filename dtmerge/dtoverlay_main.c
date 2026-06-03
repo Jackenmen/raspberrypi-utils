@@ -39,6 +39,13 @@ modification, are permitted provided that the following conditions are met:
 #include "dtoverlay.h"
 #include "utils.h"
 
+#if (defined(_WIN32) || defined(__WIN32__))
+#include <Shlobj.h>
+
+#define mkdir(A, B) mkdir(A)
+
+#define getuid() (!IsUserAnAdmin())
+#endif
 
 #define CFG_DIR_1 "/sys/kernel/config"
 #define CFG_DIR_2 "/config"
@@ -125,6 +132,11 @@ int main(int argc, const char **argv)
     if (strrchr(cmd_name, '/'))
         cmd_name = strrchr(cmd_name, '/') + 1;
     is_dtparam = (strcmp(cmd_name, "dtparam") == 0);
+    #if (defined(_WIN32) || defined(__WIN32__))
+    if (!is_dtparam) {
+        is_dtparam = (strcmp(cmd_name, "dtparam.exe") == 0);
+    }
+    #endif
 
     while ((argn < argc) && (argv[argn][0] == '-'))
     {
@@ -1078,7 +1090,14 @@ static int dtoverlay_list_all(STATE_T *state)
 static void usage(void)
 {
     printf("Usage:\n");
-    if (strcmp(cmd_name, "dtparam") == 0)
+    int is_dtparam;
+    is_dtparam = (strcmp(cmd_name, "dtparam") == 0);
+    #if (defined(_WIN32) || defined(__WIN32__))
+    if (!is_dtparam) {
+        is_dtparam = (strcmp(cmd_name, "dtparam.exe") == 0);
+    }
+    #endif
+    if (is_dtparam)
     {
         printf("  %s                Display help on all parameters\n", cmd_name);
         printf("  %s <param>=<val>...\n", cmd_name);
