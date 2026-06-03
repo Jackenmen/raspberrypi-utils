@@ -155,5 +155,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: utils-${{ runner.os }}-${{ matrix.arch }}-${{ matrix.build_type }}
-          path: ${{ steps.artifact-dir.outputs.path }}
+          path: ${{ steps.artifact-dir.outputs.path }}/usr/bin
           if-no-files-found: error
