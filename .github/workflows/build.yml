@@ -21,6 +21,8 @@ jobs:
           - ubuntu-24.04-arm
           - macos-26-intel
           - macos-26
+          - windows-2025
+          - windows-11-arm
         include:
           - runs-on: ubuntu-24.04
             os_name: Linux
@@ -34,6 +36,16 @@ jobs:
           - runs-on: macos-26
             os_name: macOS
             arch: arm64
+          - runs-on: windows-2025
+            os_name: Windows
+            arch: amd64
+          - runs-on: windows-11-arm
+            os_name: Windows
+            arch: arm64
+
+    defaults:
+      run:
+        shell: ${{ case(matrix.os_name == 'Windows', 'msys2 {0}', 'bash -e {0}') }}
 
     steps:
       - name: Checkout
@@ -49,6 +61,15 @@ jobs:
           ref: 8f48565e5cfedc74d3f7512f1e0188e9d85dc1de
           path: dtc
 
+      - name: Checkout
+        uses: actions/checkout@v4
+        if: runner.os == 'Windows'
+        with:
+          repository: tronkko/dirent
+          # tag: 1.26
+          ref: 31db6474b5231c180bd4618c8c90e43af50c86d0
+          path: dirent
+
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -59,6 +80,24 @@ jobs:
         run: |
           brew install meson
 
+      - name: Install build dependencies (Windows)
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: ${{ case(matrix.arch == 'amd64', 'clang64', 'clangarm64') }}
+          update: true
+          install: >-
+            git
+            flex
+            bison
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            meson:p
+            ninja:p
+            libyaml:p
+
       - name: Build dtc
         working-directory: dtc
         run: |
@@ -68,12 +107,20 @@ jobs:
       - name: Configure
         working-directory: raspberrypi-utils
         env:
+          RUNNER_OS: ${{ runner.os }}
           BUILD_TYPE: ${{ matrix.build_type }}
         run: |
-          dtc_dir="$GITHUB_WORKSPACE/dtc"
-          injected_lists="$GITHUB_WORKSPACE/InjectCMakeLists.txt"
+          base_dir=$(realpath "$(pwd)/..")
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            base_dir=$(cygpath -m "$base_dir")
+          fi
+          dtc_dir="$base_dir/dtc"
+          injected_lists="$base_dir/InjectCMakeLists.txt"
           printf 'include_directories("%s")\nlink_directories("%s")\n' \
             "$dtc_dir/libfdt" "$dtc_dir/build/libfdt" > "$injected_lists"
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            printf 'include_directories("%s")\n' "$base_dir/dirent/include" >> "$injected_lists"
+          fi
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             -DCMAKE_INSTALL_PREFIX=/usr \
@@ -86,11 +133,27 @@ jobs:
 
       - name: Install (stage)
         working-directory: raspberrypi-utils
-        run: DESTDIR="$PWD/install" cmake --install build
+        run: |
+          DESTDIR="$PWD/install" cmake --install build
+          echo "$PWD"
+
+      - name: Determine artifact directory
+        id: artifact-dir
+        working-directory: raspberrypi-utils
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          if [[ -n "$MSYS2_LOCATION" ]]; then
+            suffix=$(echo "$MSYS2_LOCATION" | sed -E 's#([A-Za-z]):\\##' | sed -E 's#\\#/#g')
+            echo "$suffix"
+            echo "path=$(cygpath -m "$PWD/install/$suffix")" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "path=$PWD/install" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload artefacts
         uses: actions/upload-artifact@v4
         with:
           name: utils-${{ runner.os }}-${{ matrix.arch }}-${{ matrix.build_type }}
-          path: raspberrypi-utils/install/
+          path: ${{ steps.artifact-dir.outputs.path }}
           if-no-files-found: error
